@@ -17,23 +17,40 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      artifact_path: ${{ steps.site_dir.outputs.path }}
     steps:
       - uses: actions/checkout@v4
 
+      # This repo doesn't always have a bundler (Vite, etc.) — while it's
+      # just a static placeholder in public/, skip the npm build entirely
+      # and deploy that folder as-is. Once a package.json shows up again,
+      # this switches back to building with npm and deploying dist/.
+      - name: Detect project type
+        id: node_project
+        run: echo "exists=$( [ -f package.json ] && echo true || echo false )" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-node@v4
+        if: steps.node_project.outputs.exists == 'true'
         with:
           node-version: 20
           cache: npm
 
       - run: npm ci
+        if: steps.node_project.outputs.exists == 'true'
+
       - run: npm run build
+        if: steps.node_project.outputs.exists == 'true'
         env:
           DEPLOY_TARGET: gh-pages
+
+      - id: site_dir
+        run: echo "path=$( [ '${{ steps.node_project.outputs.exists }}' = 'true' ] && echo dist || echo public )" >> "$GITHUB_OUTPUT"
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: ${{ steps.site_dir.outputs.path }}
 
   deploy:
     needs: build
